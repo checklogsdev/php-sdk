@@ -88,7 +88,7 @@ class CheckLogsClient
     public function __construct(string $apiKey, array $options = [])
     {
         $this->apiKey = $apiKey;
-        $this->baseUrl = $options['baseUrl'] ?? 'https://checklogs.dev/api/logs';
+        $this->baseUrl = $options['baseUrl'] ?? 'https://checklogs.dev';
         $this->timeout = ($options['timeout'] ?? 5000) / 1000;
         $this->validatePayload = $options['validatePayload'] ?? true;
 
@@ -110,19 +110,19 @@ class CheckLogsClient
         }
         
         $enrichedData = $this->enrichLogData($data);
-        return $this->makeRequest('POST', '/logs.php', $enrichedData);
+        return $this->makeRequest('POST', '/api/logs', $enrichedData);
     }
 
     public function getLogs(array $filters = []): ?array
     {
         $query = http_build_query($filters);
-        $endpoint = '/logs.php' . ($query ? '?' . $query : '');
+        $endpoint = '/api/logs' . ($query ? '?' . $query : '');
         return $this->makeRequest('GET', $endpoint);
     }
 
     public function getStats(): ?array 
     { 
-        return $this->makeRequest('GET', '/logs.php?stats=1'); 
+        return $this->makeRequest('GET', '/api/logs?stats=1'); 
     }
 
     // Méthodes de compatibilité - redirigent vers getStats()
