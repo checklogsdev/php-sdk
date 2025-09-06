@@ -88,7 +88,7 @@ class CheckLogsClient
     public function __construct(string $apiKey, array $options = [])
     {
         $this->apiKey = $apiKey;
-        $this->baseUrl = $options['baseUrl'] ?? 'https://checklogs.dev/api';
+        $this->baseUrl = $options['baseUrl'] ?? 'https://checklogs.dev/api/logs';
         $this->timeout = ($options['timeout'] ?? 5000) / 1000;
         $this->validatePayload = $options['validatePayload'] ?? true;
 
