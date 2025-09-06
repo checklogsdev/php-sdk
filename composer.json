@@ -1,0 +1,35 @@
+{
+    "name": "checklogs/php-sdk",
+    "description": "SDK PHP officiel pour CheckLogs.dev - Système de surveillance des logs",
+    "type": "library",
+    "keywords": ["logging", "monitoring", "checklogs", "php", "sdk"],
+    "homepage": "https://github.com/checklogsdev/php-sdk",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "CheckLogs Team",
+            "email": "contact@loggersimple.com",
+            "homepage": "https://checklogs.dev"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/checklogsdev/php-sdk/issues",
+        "docs": "https://docs.checklogs.dev",
+        "email": "contact@loggersimple.com"
+    },
+    "require": {
+        "php": "^7.4 || ^8.0",
+        "guzzlehttp/guzzle": "^7.0",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "CheckLogs\\": "./"
+        },
+        "files": [
+            "src/functions.php"
+        ]
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
