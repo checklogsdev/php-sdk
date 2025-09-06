@@ -88,7 +88,7 @@ class CheckLogsClient
     public function __construct(string $apiKey, array $options = [])
     {
         $this->apiKey = $apiKey;
-        $this->baseUrl = $options['baseUrl'] ?? 'https://checklogs.dev/api/logs';
+        $this->baseUrl = $options['baseUrl'] ?? 'https://checklogs.dev/api';
         $this->timeout = ($options['timeout'] ?? 5000) / 1000;
         $this->validatePayload = $options['validatePayload'] ?? true;
 
@@ -103,29 +103,35 @@ class CheckLogsClient
         ]);
     }
 
-    public function log(array $data): array
+    public function log(array $data): ?array
     {
         if ($this->validatePayload) {
             $this->validateLogData($data);
         }
         
         $enrichedData = $this->enrichLogData($data);
-        return $this->makeRequest('POST', '/logs', $enrichedData);
+        return $this->makeRequest('POST', '/logs.php', $enrichedData);
     }
 
-    public function getLogs(array $filters = []): array
+    public function getLogs(array $filters = []): ?array
     {
         $query = http_build_query($filters);
-        return $this->makeRequest('GET', '/logs?' . $query);
+        $endpoint = '/logs.php' . ($query ? '?' . $query : '');
+        return $this->makeRequest('GET', $endpoint);
     }
 
-    public function getStats(): array { return $this->makeRequest('GET', '/stats'); }
-    public function getSummary(): array { return $this->makeRequest('GET', '/stats/summary'); }
-    public function getErrorRate(): array { return $this->makeRequest('GET', '/stats/error-rate'); }
-    public function getTrend(): array { return $this->makeRequest('GET', '/stats/trend'); }
-    public function getPeakDay(): array { return $this->makeRequest('GET', '/stats/peak-day'); }
+    public function getStats(): ?array 
+    { 
+        return $this->makeRequest('GET', '/logs.php?stats=1'); 
+    }
 
-    private function makeRequest(string $method, string $endpoint, array $data = null): array
+    // Méthodes de compatibilité - redirigent vers getStats()
+    public function getSummary(): ?array { return $this->getStats(); }
+    public function getErrorRate(): ?array { return $this->getStats(); }
+    public function getTrend(): ?array { return $this->getStats(); }
+    public function getPeakDay(): ?array { return $this->getStats(); }
+
+    private function makeRequest(string $method, string $endpoint, array $data = null): ?array
     {
         $attempts = 0;
         
@@ -137,18 +143,44 @@ class CheckLogsClient
                 }
 
                 $response = $this->httpClient->request($method, $endpoint, $options);
-                return json_decode($response->getBody()->getContents(), true);
+                $responseBody = $response->getBody()->getContents();
+                
+                // Vérifier si la réponse est vide
+                if (empty($responseBody)) {
+                    return null;
+                }
+                
+                $decoded = json_decode($responseBody, true);
+                
+                // Vérifier les erreurs JSON
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    throw new ApiError('Invalid JSON response: ' . json_last_error_msg());
+                }
+                
+                return $decoded;
 
             } catch (ClientException $e) {
-                if ($e->getResponse()->getStatusCode() >= 400 && $e->getResponse()->getStatusCode() < 500) {
-                    throw new ApiError('API Error: ' . $e->getMessage(), $e->getResponse()->getStatusCode(), $e->getResponse());
+                $statusCode = $e->getResponse()->getStatusCode();
+                $responseBody = $e->getResponse()->getBody()->getContents();
+                
+                // Essayer de décoder la réponse d'erreur JSON
+                $errorData = json_decode($responseBody, true);
+                $errorMessage = $errorData['error']['message'] ?? $e->getMessage();
+                
+                if ($statusCode >= 400 && $statusCode < 500) {
+                    throw new ApiError('API Error: ' . $errorMessage, $statusCode, $errorData);
                 }
                 throw $e;
 
             } catch (ServerException $e) {
                 $attempts++;
                 if ($attempts > $this->maxRetries) {
-                    throw new ApiError('Server Error: ' . $e->getMessage(), $e->getResponse()->getStatusCode(), $e->getResponse());
+                    $statusCode = $e->getResponse()->getStatusCode();
+                    $responseBody = $e->getResponse()->getBody()->getContents();
+                    $errorData = json_decode($responseBody, true);
+                    $errorMessage = $errorData['error']['message'] ?? $e->getMessage();
+                    
+                    throw new ApiError('Server Error: ' . $errorMessage, $statusCode, $errorData);
                 }
                 usleep($this->retryDelay * 1000 * $attempts);
 
@@ -163,6 +195,8 @@ class CheckLogsClient
                 throw new NetworkError('Request Error: ' . $e->getMessage());
             }
         }
+        
+        return null;
     }
 
     private function validateLogData(array $data): void
@@ -176,7 +210,7 @@ class CheckLogsClient
         }
 
         if (isset($data['level']) && !LogLevel::isValid($data['level'])) {
-            throw new ValidationError('Invalid log level');
+            throw new ValidationError('Invalid log level. Valid levels: ' . implode(', ', LogLevel::all()));
         }
 
         if (isset($data['source']) && strlen($data['source']) > 100) {
@@ -196,18 +230,22 @@ class CheckLogsClient
     {
         $enriched = $data;
         
+        // Définir le niveau par défaut
         if (!isset($enriched['level'])) {
             $enriched['level'] = LogLevel::INFO;
         }
 
+        // Ajouter timestamp si pas présent
         if (!isset($enriched['timestamp'])) {
             $enriched['timestamp'] = date('c');
         }
 
+        // Ajouter hostname si pas présent
         if (!isset($enriched['hostname'])) {
-            $enriched['hostname'] = gethostname();
+            $enriched['hostname'] = gethostname() ?: 'unknown';
         }
 
+        // Ajouter informations processus si pas présent
         if (!isset($enriched['process'])) {
             $enriched['process'] = [
                 'pid' => getmypid(),
@@ -219,8 +257,15 @@ class CheckLogsClient
         return $enriched;
     }
 
-    public function getRetryQueueStatus(): array { return ['count' => count($this->retryQueue), 'items' => $this->retryQueue]; }
-    public function clearRetryQueue(): void { $this->retryQueue = []; }
+    public function getRetryQueueStatus(): array 
+    { 
+        return ['count' => count($this->retryQueue), 'items' => $this->retryQueue]; 
+    }
+    
+    public function clearRetryQueue(): void 
+    { 
+        $this->retryQueue = []; 
+    }
 
     public function flush(int $timeoutMs = 30000): bool
     {
@@ -292,7 +337,16 @@ class CheckLogsLogger
         }
 
         if (!$this->silent) {
-            return $this->client->log($enrichedData);
+            try {
+                return $this->client->log($enrichedData);
+            } catch (Exception $e) {
+                // En cas d'erreur, afficher l'erreur si consoleOutput est activé
+                if ($this->consoleOutput) {
+                    echo "[ERROR] Failed to send log to CheckLogs: " . $e->getMessage() . "\n";
+                }
+                // Ne pas lever l'exception pour ne pas casser l'application
+                return null;
+            }
         }
 
         return null;
@@ -336,7 +390,13 @@ class CheckLogsLogger
             'includeHostname' => $this->includeHostname
         ];
 
-        return new CheckLogsLogger($this->client->apiKey ?? '', $childOptions);
+        // Récupérer l'API key du client parent
+        $reflection = new \ReflectionClass($this->client);
+        $apiKeyProperty = $reflection->getProperty('apiKey');
+        $apiKeyProperty->setAccessible(true);
+        $apiKey = $apiKeyProperty->getValue($this->client);
+
+        return new CheckLogsLogger($apiKey, $childOptions);
     }
 
     public function time(string $id, string $message = null): callable
@@ -365,12 +425,12 @@ class CheckLogsLogger
     }
 
     // Délégation vers le client
-    public function getLogs(array $filters = []): array { return $this->client->getLogs($filters); }
-    public function getStats(): array { return $this->client->getStats(); }
-    public function getSummary(): array { return $this->client->getSummary(); }
-    public function getErrorRate(): array { return $this->client->getErrorRate(); }
-    public function getTrend(): array { return $this->client->getTrend(); }
-    public function getPeakDay(): array { return $this->client->getPeakDay(); }
+    public function getLogs(array $filters = []): ?array { return $this->client->getLogs($filters); }
+    public function getStats(): ?array { return $this->client->getStats(); }
+    public function getSummary(): ?array { return $this->client->getSummary(); }
+    public function getErrorRate(): ?array { return $this->client->getErrorRate(); }
+    public function getTrend(): ?array { return $this->client->getTrend(); }
+    public function getPeakDay(): ?array { return $this->client->getPeakDay(); }
     public function getRetryQueueStatus(): array { return $this->client->getRetryQueueStatus(); }
     public function clearRetryQueue(): void { $this->client->clearRetryQueue(); }
     public function flush(int $timeoutMs = 30000): bool { return $this->client->flush($timeoutMs); }
@@ -404,7 +464,7 @@ class CheckLogsLogger
         $output = "[$timestamp] [$level] $message";
         
         if (!empty($data['context'])) {
-            $output .= ' ' . json_encode($data['context']);
+            $output .= ' ' . json_encode($data['context'], JSON_UNESCAPED_UNICODE);
         }
 
         echo $output . PHP_EOL;
