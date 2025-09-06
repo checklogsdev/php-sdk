@@ -23,10 +23,8 @@
         "ext-json": "*"
     },
     "autoload": {
-        "psr-4": {
-            "CheckLogs\\": "./"
-        },
         "files": [
+            "CheckLogs.php",
             "src/functions.php"
         ]
     },
